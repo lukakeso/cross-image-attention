@@ -10,13 +10,14 @@ from utils import attention_utils
 from utils.adain import masked_adain, adain
 from utils.model_utils import get_stable_diffusion_model
 from utils.segmentation import Segmentor
+from utils.image_utils import load_size
 
 
 class AppearanceTransferModel:
 
     def __init__(self, config: RunConfig, pipe: Optional[CrossImageAttentionStableDiffusionPipeline] = None):
         self.config = config
-        self.pipe = get_stable_diffusion_model() if pipe is None else pipe
+        self.pipe = get_stable_diffusion_model(config.use_control) if pipe is None else pipe
         self.register_attention_control()
         self.segmentor = Segmentor(prompt=config.prompt, object_nouns=[config.object_noun])
         self.latents_app, self.latents_struct = None, None
@@ -26,6 +27,9 @@ class AppearanceTransferModel:
         self.enable_edit = False
         self.step = 0
 
+    def set_contrast_strength(self, constrast_strength: float):
+        self.config.contrast_strength = constrast_strength
+        
     def set_latents(self, latents_app: torch.Tensor, latents_struct: torch.Tensor):
         self.latents_app = latents_app
         self.latents_struct = latents_struct
@@ -38,16 +42,35 @@ class AppearanceTransferModel:
         self.image_app_mask_32, self.image_struct_mask_32, self.image_app_mask_64, self.image_struct_mask_64 = masks
 
     def get_adain_callback(self):
-
+        #/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/train/cloth-mask/00780_00.jpg
+        #/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/test/cloth-mask/00008_00.jpg
         def callback(st: int, timestep: int, latents: torch.FloatTensor) -> Callable:
             self.step = st
             # Compute the masks using prompt mixing self-segmentation and use the masks for AdaIN operation
-            if self.config.use_masked_adain and self.step == self.config.adain_range.start:
-                masks = self.segmentor.get_object_masks()
-                self.set_masks(masks)
+            if self.config.use_masked_adain and self.step >= self.config.adain_range.start and self.image_struct_mask_64 is None:
+                
+                #style_mask_32 = load_size("/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/train/cloth-mask/00780_00.jpg", size=32, binary=True)
+                #style_mask_64 = load_size("/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/train/cloth-mask/00780_00.jpg", size=64, binary=True)
+                style_mask_32 = load_size("/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/train/cloth-mask/11342_00.jpg", size=32, binary=True)
+                style_mask_64 = load_size("/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/train/cloth-mask/11342_00.jpg", size=64, binary=True)
+                
+                struct_mask_32 = load_size("/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/test/cloth-mask/00008_00.jpg", size=32, binary=True)
+                struct_mask_64 = load_size("/d/hpc/home/lk6760/FRI_HOME/EXPERIMENTS/cross-image-attention/datasets/vitonhd/test/cloth-mask/00008_00.jpg", size=64, binary=True)
+                
+                masks = (torch.from_numpy(style_mask_32).to("cuda"), torch.from_numpy(struct_mask_32).to("cuda"), \
+                        torch.from_numpy(style_mask_64).to("cuda"), torch.from_numpy(struct_mask_64).to("cuda"))
+                
+                #masks = self.segmentor.get_object_masks()
+                mask_checkpoint=[]
+                for m in masks:
+                    print(m.min(), m.max())
+                    if m.min() != m.max():
+                        mask_checkpoint.append(m.max())
+                if len(mask_checkpoint) >= 2:
+                    self.set_masks(masks)
             # Apply AdaIN operation using the computed masks
             if self.config.adain_range.start <= self.step < self.config.adain_range.end:
-                if self.config.use_masked_adain:
+                if self.config.use_masked_adain and self.image_struct_mask_64 != None:
                     latents[0] = masked_adain(latents[0], latents[1], self.image_struct_mask_64, self.image_app_mask_64)
                 else:
                     latents[0] = adain(latents[0], latents[1])
@@ -135,6 +158,7 @@ class AppearanceTransferModel:
                     is_cross=is_cross,
                     contrast_strength=model_self.config.contrast_strength,
                 )
+                #print("Contrast Strength:", model_self.config.contrast_strength)
 
                 # Update attention map for segmentation
                 if model_self.config.use_masked_adain and model_self.step == model_self.config.adain_range.start - 1:
