@@ -42,9 +42,11 @@ class RunConfig:
     load_latents: bool = True
     # Number of steps to skip in the denoising process (used value from original edit-friendly DDPM paper)
     skip_steps: int = 32
+    
+    use_control: bool = False
 
     def __post_init__(self):
-        save_name = f'app={self.app_image_path.stem}---struct={self.struct_image_path.stem}'
+        save_name = f'app={self.app_image_path.stem}--struct={self.struct_image_path.stem}'
         self.output_path = self.output_path / self.domain_name / save_name
         self.output_path.mkdir(parents=True, exist_ok=True)
 

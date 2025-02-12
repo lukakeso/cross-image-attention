@@ -5,7 +5,7 @@ def masked_adain(content_feat, style_feat, content_mask, style_mask):
     content_mean, content_std = calc_mean_std(content_feat, mask=content_mask)
     normalized_feat = (content_feat - content_mean.expand(size)) / content_std.expand(size)
     style_normalized_feat = normalized_feat * style_std.expand(size) + style_mean.expand(size)
-    return content_feat * (1 - content_mask) + style_normalized_feat * content_mask
+    return content_feat * ~content_mask + style_normalized_feat * content_mask
 
 
 def adain(content_feat, style_feat):

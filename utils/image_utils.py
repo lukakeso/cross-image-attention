@@ -21,12 +21,16 @@ def load_size(image_path: pathlib.Path,
               right: int = 0,
               top: int = 0,
               bottom: int = 0,
-              size: int = 512) -> Image.Image:
+              size: int = 512,
+              binary: bool = False) -> Image.Image:
     if isinstance(image_path, (str, pathlib.Path)):
-        image = np.array(Image.open(str(image_path)).convert('RGB'))  
+        if binary:
+            image = np.array(Image.open(str(image_path)).convert('RGB').resize((size,size),Image.NEAREST))  
+        else:
+            image = np.array(Image.open(str(image_path)).convert('RGB').resize((size,size)))  
     else:
         image = image_path
-
+    
     h, w, _ = image.shape
 
     left = min(left, w - 1)
@@ -44,7 +48,11 @@ def load_size(image_path: pathlib.Path,
         offset = (h - w) // 2
         image = image[offset:offset + w]
 
-    image = np.array(Image.fromarray(image).resize((size, size)))
+    if binary:
+        image = np.array(Image.fromarray(image).convert('1').point(lambda x: 0 if x < 100 else 1, mode='1'))
+    else:
+        image = np.array(Image.fromarray(image).resize((size, size)))
+    print(image.shape)
     return image
 
 

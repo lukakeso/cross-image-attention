@@ -10,6 +10,25 @@ from config import RunConfig
 from utils import image_utils
 from utils.ddpm_inversion import invert
 
+from controlnet_aux import MidasDetector, AnylineDetector
+
+
+def load_depth_image(cfg: RunConfig):
+    save_path = cfg.output_path
+    depth_processor = MidasDetector.from_pretrained("lllyasviel/Annotators")
+    image = image_utils.load_size(cfg.struct_image_path)
+    image = Image.fromarray(image)
+    depth_image = depth_processor(image)
+    depth_image = depth_image.resize(size=(image.size))
+    if save_path is not None:
+        depth_image.save(save_path / f"in_depth.png")
+    
+    input_depth = torch.from_numpy(np.array(depth_image)).float() / 127.5 - 1.0
+    input_depth = input_depth.permute(2, 0, 1).unsqueeze(0).to('cuda')
+    
+    return input_depth
+
+    
 
 def load_latents_or_invert_images(model: AppearanceTransferModel, cfg: RunConfig):
     if cfg.load_latents and cfg.app_latent_save_path.exists() and cfg.struct_latent_save_path.exists():
